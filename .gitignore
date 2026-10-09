@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Downloaded media / scratch output
+downloads/
+output/
+*.mp4
+*.m4v
+*.mov
+*.webm
+*.m4a
+*.wav
+
+# Exported session cookies — never commit these
+cookies.txt
+*_cookies_*.txt
+sp_cookies_*.txt
