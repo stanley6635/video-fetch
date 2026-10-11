@@ -1,6 +1,6 @@
 # video-fetch
 
-Download videos, image notes, and article images to local files — from **抖音 Douyin**, **小红书 Xiaohongshu**, **WeChat 公众号 articles**, and **authenticated SharePoint / enterprise sites**.
+Download videos, image notes, and article images to local files — from **抖音 Douyin**, **小红书 Xiaohongshu**, **WeChat 公众号 articles**, **X (Twitter)**, and **authenticated SharePoint / enterprise sites**.
 
 Platform free endpoints change often, and the naive approach usually fails silently (a stripped page, an empty JSON payload, a 403 that looks like a ban). This skill encodes the currently validated request paths as ready-to-run scripts, plus the environment gotchas that make them work.
 
@@ -15,7 +15,7 @@ Platform free endpoints change often, and the naive approach usually fails silen
 - Python 3.10+ (scripts are stdlib + `curl` unless noted)
 - `curl` on `PATH`
 - [`ffprobe`](https://ffmpeg.org/) for verification (optional but recommended)
-- For Douyin: [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) and Playwright (`uv run --with playwright==1.63.0` provisions it on the fly)
+- For Douyin and X (Twitter): [`yt-dlp`](https://github.com/yt-dlp/yt-dlp); Playwright too for Douyin (`uv run --with playwright==1.63.0` provisions it on the fly)
 - For SharePoint: Playwright plus a system Google Chrome (the script opens a real window so you can sign in)
 
 The scripts are written for macOS and fall back to `/opt/homebrew/bin/` when `ffprobe`/`yt-dlp` are not found on `PATH`. Other platforms mostly work — adjust the binary lookup if needed.
@@ -36,6 +36,11 @@ python3 scripts/fetch_wechat.py "https://mp.weixin.qq.com/s/..." -o ~/Downloads
 python3 scripts/fetch_wechat.py "<url>" --info            # title, quality variants, image count
 python3 scripts/fetch_wechat.py "<url>" --video-only
 
+# X (Twitter) — route through the macOS system proxy (see Environment notes)
+yt-dlp --proxy http://127.0.0.1:6268 -F "https://x.com/<user>/status/<id>"      # check formats on long posts
+yt-dlp --proxy http://127.0.0.1:6268 -f http-<n> --no-continue --no-part \
+  -o "$HOME/Downloads/%(uploader_id)s_%(id)s.%(ext)s" "https://x.com/<user>/status/<id>"
+
 # SharePoint / authenticated enterprise pages
 uv run --with playwright==1.63.0 python scripts/fetch_sharepoint.py "<page URL>" --list
 uv run --with playwright==1.63.0 python scripts/fetch_sharepoint.py "<page URL>" --title "Quarterly All Hands"
@@ -54,6 +59,7 @@ SharePoint pages sit behind the viewer's own login, so `fetch_sharepoint.py` is 
 | 小红书 | short link → `window.__INITIAL_STATE__` → pre-signed `masterUrl` (video) or `imageList` (images); mobile UA required; note ID is verified against the link |
 | 抖音 | short link → headless Chromium exports fresh cookies → `yt-dlp` downloads and merges (≤720p, no watermark) |
 | 公众号 | article HTML → embedded quality-variant array (pick largest) + `content_noencode` body images on `qpic.cn`; anti-leech CDN needs a retry loop and a `Host` header override |
+| X (Twitter) | plain `yt-dlp` extractor (no login) routed through the macOS system proxy → progressive `http-<n>` MP4, verified with `ffprobe` |
 | SharePoint | rendered page HTML → `videosrc` attribute on the play button → `curl` with the session cookie jar |
 
 Each platform's specific traps — stale tokens serving you the wrong note, HTTP 416 resume state, CDN edge redirects, dead endpoints — are documented in `SKILL.md` and encoded in the scripts. Read the comments before "simplifying" a retry loop away.
@@ -61,6 +67,7 @@ Each platform's specific traps — stale tokens serving you the wrong note, HTTP
 ## Environment notes
 
 - If a **dead local proxy** is configured (`http_proxy=http://127.0.0.1:*` with no listener), it hijacks all traffic. Every network call bypasses it: curl `--noproxy '*'`, Chromium `--no-proxy-server`, yt-dlp `--proxy ""`. The scripts strip all `*proxy*` env vars themselves.
+- Platforms that are **blocked on your network** (x.com, YouTube, …) are the opposite case: route them through the macOS system proxy client — read host/port with `scutil --proxy` (validated example: `127.0.0.1:6268`) and pass it explicitly (`yt-dlp --proxy`, `curl -x`); the bypass tricks above will only time out.
 - macOS TCC blocks reading Safari cookie files, so `--cookies-from-browser safari` is not an option.
 - A sandboxed agent environment may block reading Chrome's own profile directory; the SharePoint script uses a throwaway profile for this reason.
 

@@ -1,15 +1,15 @@
 ---
 name: video-fetch
-description: Use when the user asks to 下载视频 / 保存视频 / 存图 / 抓取配图 / 下载公众号文章媒体 / download or save a video, image note, or article media from Douyin 抖音, Xiaohongshu 小红书, or a WeChat official-account (公众号) article, pastes a share text or link from these platforms (xhslink.cn, v.douyin.com, xiaohongshu.com/discovery/item, douyin.com/video, mp.weixin.qq.com/s/...), or asks whether such media can be saved locally. Download only; transcription/逐字稿 and OCR are not covered here.
+description: Use when the user asks to 下载视频 / 保存视频 / 存图 / 抓取配图 / 下载公众号文章媒体 / download or save a video, image note, or article media from Douyin 抖音, Xiaohongshu 小红书, a WeChat official-account (公众号) article, or an X (Twitter) post (x.com/.../status/...), pastes a share text or link from these platforms (xhslink.cn, v.douyin.com, xiaohongshu.com/discovery/item, douyin.com/video, mp.weixin.qq.com/s/...), or asks whether such media can be saved locally. Download only; transcription/逐字稿 and OCR are not covered here.
 ---
 
 # Video Fetch
 
-Download videos (and image notes / article images) from Douyin (抖音), Xiaohongshu (小红书), WeChat official-account (公众号) articles, and authenticated SharePoint/enterprise sites to local files.
+Download videos (and image notes / article images) from Douyin (抖音), Xiaohongshu (小红书), WeChat official-account (公众号) articles, X (Twitter) posts, and authenticated SharePoint/enterprise sites to local files.
 
 ## Overview
 
-Platform free endpoints change often, so this skill encodes the **currently validated paths** (Douyin/XHS 2026-10-01, WeChat 2026-10-08) as ready-to-run scripts, plus the environment gotchas that make naive attempts fail. Run scripts, don't improvise; if a script fails, fall back to the manual procedures below before concluding the platform changed.
+Platform free endpoints change often, so this skill encodes the **currently validated paths** (Douyin/XHS 2026-10-01, WeChat 2026-10-08, X/Twitter 2026-10-11) as ready-to-run scripts, plus the environment gotchas that make naive attempts fail. Run scripts, don't improvise; if a script fails, fall back to the manual procedures below before concluding the platform changed.
 
 This is a **system-level** skill: it serves any project, not one repo. Downloads go to `~/Downloads` by default.
 
@@ -38,6 +38,7 @@ uv run --with playwright==1.63.0 python scripts/fetch_sharepoint.py "<page URL>"
 ## Environment gotchas (apply to every attempt)
 
 - A **dead local proxy** (`http_proxy=http://127.0.0.1:*` pointing at no listener) silently hijacks all traffic. If one is configured, every network call must bypass it: curl `--noproxy '*'` (scripts also strip all `*proxy*` env vars), Chromium `--no-proxy-server`, yt-dlp `--proxy ""`.
+- **Blocked platforms are the opposite case.** Direct connections to x.com / api.x.com time out, the injected sandbox proxy can't reach them either, and local DNS for api.x.com is poisoned. Route through the macOS system proxy client instead: read host/port via `scutil --proxy` (validated example: `127.0.0.1:6268`) and pass it explicitly — CLI flags (`yt-dlp --proxy`, `curl -x`) override the injected env vars. If the proxy is off, ask the user to start it.
 - On macOS, TCC blocks reading Safari cookie files (Operation not permitted) — don't try `--cookies-from-browser safari`.
 - Scripts locate `ffprobe`/`yt-dlp` on PATH first (falling back to `/opt/homebrew/bin/`).
 - Scripts are invoked relative to this skill's directory (`scripts/...`); resolve the absolute path to the skill dir when running.
@@ -88,6 +89,18 @@ python3 scripts/fetch_wechat.py "<mp.weixin.qq.com/s/... URL or share text>" -o 
   - WeChat article pages intermittently serve a stripped anti-bot page; the script retries the fetch.
   - The signed video URL carries its own expiry; if it fails after retries, ask for a fresh share link.
 
+## X (Twitter)
+
+```bash
+yt-dlp --proxy http://127.0.0.1:6268 -F "<https://x.com/<user>/status/<id>>"
+yt-dlp --proxy http://127.0.0.1:6268 -f http-<best> --no-continue --no-part \
+  -o "$HOME/Downloads/%(uploader_id)s_%(id)s_%(title).72s.%(ext)s" "<URL>"
+```
+
+- Validated 2026-10-11: plain extractor, no login or cookies needed. **Must go through the system proxy** (see Environment gotchas) — `--proxy ""` and the injected sandbox proxy both time out.
+- `-F` first when the post looks long-form (validated case: 2h09m post, max 642×360): pick the progressive `http-<n>` format — video+audio in one MP4; `hls-*` entries are video-only and would need a separate audio mux.
+- Ignore the printed size estimate. The format-id bandwidth is peak, not the VBR average: an `http-832` 2h variant actually weighed 175 MiB (~189 kbps). Choose by resolution in `-F`, then verify with ffprobe after download (duration must equal the source's).
+
 ## Transcription hand-off
 
 - If a **逐字稿** or slide/OCR report is wanted for a downloaded video/audio, hand off to a separate transcription step (e.g. the `video-miner` skill) — do not transcribe here.
@@ -100,4 +113,4 @@ python3 scripts/fetch_wechat.py "<mp.weixin.qq.com/s/... URL or share text>" -o 
 
 ## Other platforms
 
-Bilibili/YouTube/others: try `yt-dlp --proxy ""` first; only fall back to a browser-based approach like the Douyin script if the extractor fails. Authenticated enterprise sites (SharePoint/Stream/Confluence-style) go to `scripts/fetch_sharepoint.py` above. If a new platform needs custom parsing, extend this skill with a new `scripts/fetch_<platform>.py` following the same conventions (short-link resolution, proxy bypass, ffprobe verification, `~/Downloads` default, stdlib + curl where possible).
+Bilibili and other domestic platforms: try `yt-dlp --proxy ""` first. Blocked platforms (YouTube etc.): expect the same situation as X — route through the system proxy (see the X section). Only fall back to a browser-based approach like the Douyin script if the extractor fails. Authenticated enterprise sites (SharePoint/Stream/Confluence-style) go to `scripts/fetch_sharepoint.py` above. If a new platform needs custom parsing, extend this skill with a new `scripts/fetch_<platform>.py` following the same conventions (short-link resolution, proxy bypass, ffprobe verification, `~/Downloads` default, stdlib + curl where possible).
